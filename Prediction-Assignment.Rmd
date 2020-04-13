@@ -1,0 +1,152 @@
+---
+title: "Prediction Assignment"
+author: "Emma Engler"
+date: "4/10/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Executive Summary 
+With the usage of devices such as Jawbone Up, Nike, FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensivly. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. The goal of this report is to use data from accelerometers on the belt, forearm, arm and dumbbell of 6 participants to predict the manner in which they did their exercise. This is the "classe" variable in the training set. They were asked to perform barbell lifts correclty and incorrectly in 5 different ways. The following report evaluates 3 possible models in which to use prediction. 
+
+```{r}
+## Loading Necessary Packages 
+library(knitr)
+library(caret) 
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(RColorBrewer)
+library(RGtk2)
+library(gbm)
+library(corrplot)
+```
+## Loading Data 
+```{r}
+### Setting the URL for download 
+url_train <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+### Downloading the datasets 
+TrainData <-read.csv(url(url_train))
+TestData <-read.csv(url(url_test))
+### Checking dimensions 
+dim(TrainData)
+dim(TestData)
+```
+## Cleaning Data
+Both the training and test set contain 160 variables. Next, through a cleaning process, NAs will be repoved, as well as Near Zero variance (NZV) variables and nonnumerical variables. 
+```{r}
+### Removing Near Zerio Variance 
+nzv <-nearZeroVar(TrainData)
+data_train <-TrainData[,-nzv]
+data_test <-TestData[,-nzv]
+dim(data_train)
+dim(data_test)
+```
+```{r}
+### Removing NAs 
+na_val <-sapply(data_train, function(x) mean(is.na(x))) >0.95
+data_train <-data_train[,na_val==FALSE]
+data_test <-data_test[,na_val==FALSE]
+dim(data_train)
+dim(data_test)
+```
+```{r}
+### Removing ID variables 
+data_train <-data_train[, 8:59]
+data_test <-data_test[, 8:59]
+dim(data_train)
+dim(data_test)
+```
+After the cleaning process, the number of variables that will be used in analysis is reduced to 52.
+
+## Data Partitioning 
+The data_train set will now be partitioned into "training" (60%) and "testing"(40%). The "testing" set will also serve as validation. 
+```{r}
+inTrain <-createDataPartition(data_train$classe, p=0.6, list=FALSE)
+training <-data_train[inTrain,]
+testing <-data_train[-inTrain,]
+dim(training)
+dim(testing) 
+```
+## Correlation Analysis 
+Before moving to the modeling process, correlation among variables will be analyzed. 
+```{r}
+corMatrix <-cor(training[, -52])
+corrplot(corMatrix,order="FPC", method="color",type="lower",
+         tl.cex=0.8, tl.col=rgb(0,0,0))
+```
+The dark colors in the graph designate highly correlated variables. As demonstrated, there are few and no further steps will be taken in light of this. 
+
+## Prediction Model Building 
+Here, Random Forests, Decision Tree and Generalized Boosted Model methods will be used. This will allow for modeling the regression (in the train dataset) and the best model will be used later for prediction. A Confusion Matrix is used to visualize accuracy of the models. 
+
+### Decision Tree 
+```{r}
+### fitting and plotting the model 
+set.seed(12345)
+dt_model <-rpart(classe~., data=training, method="class")
+fancyRpartPlot(dt_model)
+```
+
+```{r}
+### predicton 
+dt_predict <-predict(dt_model, testing, type="class")
+confusionMatrix(dt_predict, testing$classe)
+```
+The Decision Tree Model produced an accuracy level of ~70%. This is below a satisfactory level and therefore will not be utilized in prediction.
+
+### Random Forest Model 
+```{r}
+### Fitting the Model 
+set.seed(12345)
+rf_model <-randomForest(classe~., data=training, ntree=1000)
+### Prediction 
+rf_predict <-predict(rf_model, testing, type="class")
+rf_cm <-confusionMatrix(rf_predict, testing$classe)
+rf_cm
+```
+```{r}
+###plot 
+plot(rf_cm$table, col=rf_cm$byClass, main="Random Forest Accuracy")
+```
+It can be seen from the model and plot that the Random Forest Model has quite a satisfactory accurcacy level at about 99%. 
+
+### Gradient Boosting model 
+```{r}
+### Fitting the Model 
+set.seed(12345)
+library(gbm)
+gbm_control <-trainControl(method="repeatedcv",number=5,repeats=1)
+gbm_model <-train(classe~., data=training, method="gbm",
+                  trControl=gbm_control, verbose=FALSE)
+gbm_model$finalModel
+```
+```{r}
+### prediction 
+gbm_predict <-predict(gbm_model, testing)
+gbm_cm <-confusionMatrix(gbm_predict, testing$classe)
+gbm_cm
+```
+Both the Random Forest and Gradient Boosing Models produced a satisfactory level of accuracy. Therefore, they will be compared to see which is more accurate 
+```{r}
+### Random forest accuracy 
+rf_cm$overall 
+```
+```{r}
+### Gradient Boosting accuracy 
+gbm_cm$overall 
+```
+## Conclusion 
+From the report, conclusions suggest that of the 3 models evaluated Random Forest is the most accurate (about 99%). Therefore predictions on the dataset model will be done using the Random Forest Model on the testing data. 
+
+## Predictions 
+```{r}
+prediction_test <-predict(rf_model, TestData)
+prediction_test
+```
